@@ -75,6 +75,22 @@
   .lg-row:hover { background: rgba(255,255,255,.035); }
   .lg-row.cur { background: rgba(255,255,255,.09); }
 
+  /* perception threshold HUD */
+  #percept { position: absolute; top: 14px; right: 16px; z-index: 5; display: flex;
+             align-items: center; gap: 10px; padding: 7px 12px;
+             background: rgba(11,11,14,.7); border: 1px solid var(--hair);
+             border-radius: 10px; backdrop-filter: blur(12px); }
+  #percept .lbl { font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase;
+                  color: var(--faint); line-height: 1.25; text-align: right; }
+  #percept input { width: 118px; height: 3px; -webkit-appearance: none; appearance: none;
+                   background: rgba(255,255,255,.14); border-radius: 2px; cursor: pointer; }
+  #percept input::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px;
+                   border-radius: 50%; background: var(--ink); cursor: pointer; }
+  #percept input::-moz-range-thumb { width: 11px; height: 11px; border: 0; border-radius: 50%;
+                   background: var(--ink); cursor: pointer; }
+  #p-count { font: 11px var(--mono); color: var(--dim); min-width: 18px; text-align: right;
+             font-feature-settings: "tnum"; }
+
   /* inspector */
   #inspect { position: absolute; top: 16px; left: 16px; width: 240px; display: none;
              background: rgba(11,11,14,.88); border: 1px solid var(--hair); border-radius: 12px;
@@ -198,6 +214,12 @@
 <div id="main">
   <div id="stage">
     <canvas id="mind"></canvas>
+    <div id="percept">
+      <span class="lbl">threshold of<br>perception</span>
+      <input id="p-thresh" type="range" min="0" max="0.5" step="0.01" value="0.14"
+             title="lower to perceive fainter, deeper thoughts">
+      <span id="p-count" title="thoughts currently perceived">–</span>
+    </div>
     <div id="inspect">
       <span class="x">✕</span>
       <h3 id="in-word">—</h3>
@@ -393,7 +415,8 @@ function buildCalligram(word, emoji) {
 }
 
 /* ---------------- field ---------------- */
-const MAX_VISIBLE = 10;
+let MAX_VISIBLE = 20;
+let perceptionFloor = 0.14;   // "threshold of perception" — min strength to display (live-adjustable)
 const field = {
   thoughts: new Map(), pulses: [],
   dominant: { word: null, run: 0 }, lastCalligram: new Map(),
@@ -404,7 +427,8 @@ const field = {
     for (const th of f.thoughts) {
       if (th.w.length < 3) continue;
       const v = strength(th.p);
-      if (v < 0.14) continue;
+      // no hard floor here — the perception threshold gates DISPLAY, so every
+      // sent readout enters the field and can be revealed by lowering the slider.
       let t = this.thoughts.get(th.w);
       if (!t) {
         this.totalSeen++;
@@ -492,8 +516,9 @@ const field = {
       t.w = ctx.measureText(t.word).width;
       t.calligramAlpha = lerp(t.calligramAlpha, t.calligram && t.s > 0.30 ? 1 : 0, 0.05);
     }
-    const vis = list.filter(t => t.s >= 0.015).sort((a, b) => a.s - b.s);
+    const vis = list.filter(t => t.s >= perceptionFloor).sort((a, b) => a.s - b.s);
     this.relax(vis);
+    if (pCount) pCount.textContent = vis.length;
 
     // pulses
     this.pulses = this.pulses.filter(p => p.a > 0.02);
@@ -612,6 +637,8 @@ const log = document.getElementById("log"), inp = document.getElementById("inp")
       send = document.getElementById("send"), phaseWrap = document.getElementById("phase"),
       phaseText = document.getElementById("phasetext"), conn = document.getElementById("conn"),
       ledger = document.getElementById("ledger"), tmRows = document.getElementById("tm-rows");
+const pThresh = document.getElementById("p-thresh"), pCount = document.getElementById("p-count");
+pThresh.addEventListener("input", () => { perceptionFloor = +pThresh.value; renderTopMind(); });
 const history = [];
 let busy = false, botBody = null, userSpans = null, readPtr = 0;
 let nRead = 0, nSaid = 0, tpsWindow = [];
@@ -655,8 +682,8 @@ function buildLedgerRow(f, idx) {
 }
 
 function renderTopMind() {
-  const top = [...field.thoughts.values()].filter(t => t.s > 0.04)
-    .sort((a, b) => b.s - a.s).slice(0, 7);
+  const top = [...field.thoughts.values()].filter(t => t.s >= perceptionFloor)
+    .sort((a, b) => b.s - a.s).slice(0, 10);
   tmRows.innerHTML = "";
   for (const t of top) {
     const r = document.createElement("div"); r.className = "tm-row";
