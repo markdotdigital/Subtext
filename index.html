@@ -125,7 +125,7 @@
                    border-radius: 50%; background: var(--ink); cursor: pointer; }
   #percept input::-moz-range-thumb { width: 11px; height: 11px; border: 0; border-radius: 50%;
                    background: var(--ink); cursor: pointer; }
-  #p-count { font: 11px var(--mono); color: var(--dim); min-width: 18px; text-align: right;
+  #p-count { font: 11px var(--mono); color: var(--dim); min-width: 34px; text-align: right;
              font-feature-settings: "tnum"; }
 
   /* inspector */
@@ -256,10 +256,10 @@
       <span class="v" data-v="trace" title="one word's strength across layers × tokens">trace</span>
     </div>
     <div id="percept">
-      <span class="lbl">threshold of<br>perception</span>
-      <input id="p-thresh" type="range" min="0" max="0.5" step="0.01" value="0.14"
-             title="lower to perceive fainter, deeper thoughts">
-      <span id="p-count" title="thoughts currently perceived">–</span>
+      <span class="lbl">perception<br>depth</span>
+      <input id="p-thresh" type="range" min="0" max="0.78" step="0.01" value="0"
+             title="crank right to keep only the deepest (early / perceptual) layers; left shows all">
+      <span id="p-count" title="deepest layer currently shown">–</span>
     </div>
     <div id="inspect">
       <span class="x">✕</span>
@@ -461,7 +461,12 @@ function buildCalligram(word, emoji) {
 
 /* ---------------- field ---------------- */
 let MAX_VISIBLE = 20;
-let perceptionFloor = 0.14;   // "threshold of perception" — min strength to display (live-adjustable)
+// Depth cut: show readouts whose mean layer fraction ≤ maxDepth. 1 = all layers;
+// lower it (crank the slider right) to keep only the deepest / early "perception"
+// layers and hide the shallow, speech-ready ones. A small fixed noise floor keeps
+// the faintest specks out (it's cleanup, not a user filter).
+let maxDepth = 1;
+const NOISE_FLOOR = 0.08;
 let viewMode = "cloud";       // "cloud" | "trace" (layer × token heatmap, panel B)
 let heatWord = null;          // the word the trace view follows
 const field = {
@@ -564,9 +569,13 @@ const field = {
       t.w = ctx.measureText(t.word).width;
       t.calligramAlpha = lerp(t.calligramAlpha, t.calligram && t.s > 0.30 ? 1 : 0, 0.05);
     }
-    const vis = list.filter(t => t.s >= perceptionFloor).sort((a, b) => a.s - b.s);
+    const vis = list.filter(t => t.s >= NOISE_FLOOR && t.depth <= maxDepth).sort((a, b) => a.s - b.s);
     this.relax(vis);
-    if (pCount) pCount.textContent = vis.length;
+    if (pCount) {
+      let cut = RAILS.length ? RAILS[0].layer : 0;
+      for (const r of RAILS) if (r.frac <= maxDepth) cut = r.layer;
+      pCount.textContent = "≤L" + cut;
+    }
 
     // pulses
     this.pulses = this.pulses.filter(p => p.a > 0.02);
@@ -759,7 +768,8 @@ const log = document.getElementById("log"), inp = document.getElementById("inp")
       ledger = document.getElementById("ledger"), tmRows = document.getElementById("tm-rows");
 const pThresh = document.getElementById("p-thresh"), pCount = document.getElementById("p-count");
 const words = document.getElementById("words"), wordsCount = document.getElementById("words-count");
-pThresh.addEventListener("input", () => { perceptionFloor = +pThresh.value; renderTopMind(); });
+// slider right → smaller maxDepth → keep only the deepest (early/perception) layers
+pThresh.addEventListener("input", () => { maxDepth = 1 - +pThresh.value; renderTopMind(); });
 const history = [];
 
 /* ---------------- cumulative word statistics (panel A) ---------------- */
@@ -795,7 +805,7 @@ function computeWordStats() {
   }
   // rank by presence (how many tokens the word was active) — peak strength
   // saturates, so it's a poor sort key; count surfaces the real themes.
-  return [...m.values()].filter(e => e.peak >= perceptionFloor)
+  return [...m.values()].filter(e => e.peak >= NOISE_FLOOR && e.peakLayer / (nLayersG - 1) <= maxDepth)
     .sort((a, b) => b.count - a.count || b.peak - a.peak);
 }
 function renderWordsTable() {
@@ -864,7 +874,7 @@ function buildLedgerRow(f, idx) {
 }
 
 function renderTopMind() {
-  const top = [...field.thoughts.values()].filter(t => t.s >= perceptionFloor)
+  const top = [...field.thoughts.values()].filter(t => t.s >= NOISE_FLOOR && t.depth <= maxDepth)
     .sort((a, b) => b.s - a.s).slice(0, 10);
   tmRows.innerHTML = "";
   for (const t of top) {
