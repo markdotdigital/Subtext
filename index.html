@@ -112,22 +112,6 @@
   .wd-row .ct { font: 10px var(--mono); color: var(--dim); width: 24px; text-align: right;
                 font-feature-settings: "tnum"; }
 
-  /* perception threshold HUD */
-  #percept { position: absolute; top: 14px; right: 16px; z-index: 5; display: flex;
-             align-items: center; gap: 10px; padding: 7px 12px;
-             background: rgba(11,11,14,.7); border: 1px solid var(--hair);
-             border-radius: 10px; backdrop-filter: blur(12px); }
-  #percept .lbl { font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase;
-                  color: var(--faint); line-height: 1.25; text-align: right; }
-  #percept input { width: 118px; height: 3px; -webkit-appearance: none; appearance: none;
-                   background: rgba(255,255,255,.14); border-radius: 2px; cursor: pointer; }
-  #percept input::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px;
-                   border-radius: 50%; background: var(--ink); cursor: pointer; }
-  #percept input::-moz-range-thumb { width: 11px; height: 11px; border: 0; border-radius: 50%;
-                   background: var(--ink); cursor: pointer; }
-  #p-count { font: 11px var(--mono); color: var(--dim); min-width: 34px; text-align: right;
-             font-feature-settings: "tnum"; }
-
   /* inspector */
   #inspect { position: absolute; top: 16px; left: 16px; width: 240px; display: none;
              background: rgba(11,11,14,.88); border: 1px solid var(--hair); border-radius: 12px;
@@ -232,6 +216,7 @@
     #log { max-height: 30dvh; }
     #ledger-wrap { min-height: 200px; }
     #ledger { max-height: 300px; }
+    #t-read, #t-speed { display: none; }   /* transport: keep buttons + scrubber only */
     #inspect { width: 200px; }
   }
 </style>
@@ -254,12 +239,6 @@
     <div id="viewtoggle">
       <span class="v on" data-v="cloud" title="live thought cloud">cloud</span>
       <span class="v" data-v="trace" title="one word's strength across layers × tokens">trace</span>
-    </div>
-    <div id="percept">
-      <span class="lbl">perception<br>depth</span>
-      <input id="p-thresh" type="range" min="0" max="0.78" step="0.01" value="0"
-             title="crank right to keep only the deepest (early / perceptual) layers; left shows all">
-      <span id="p-count" title="deepest layer currently shown">–</span>
     </div>
     <div id="inspect">
       <span class="x">✕</span>
@@ -460,15 +439,9 @@ function buildCalligram(word, emoji) {
 }
 
 /* ---------------- field ---------------- */
-let MAX_VISIBLE = 20;
-// Depth cut: show readouts whose mean layer fraction ≤ maxDepth. 1 = all layers;
-// lower it (crank the slider right) to keep only the deepest / early "perception"
-// layers and hide the shallow, speech-ready ones. A small fixed noise floor keeps
-// the faintest specks out (it's cleanup, not a user filter).
-let maxDepth = 1;
-const NOISE_FLOOR = 0.08;
-let viewMode = "cloud";       // "cloud" | "trace" (layer × token heatmap, panel B)
-let heatWord = null;          // the word the trace view follows
+const MAX_VISIBLE = 10;
+let viewMode = "cloud";       // "cloud" | "trace" (layer × token view)
+let traceWord = null;         // the word the trace view follows
 const field = {
   thoughts: new Map(), pulses: [],
   dominant: { word: null, run: 0 }, lastCalligram: new Map(),
@@ -479,8 +452,7 @@ const field = {
     for (const th of f.thoughts) {
       if (th.w.length < 3) continue;
       const v = strength(th.p);
-      // no hard floor here — the perception threshold gates DISPLAY, so every
-      // sent readout enters the field and can be revealed by lowering the slider.
+      if (v < 0.14) continue;
       let t = this.thoughts.get(th.w);
       if (!t) {
         this.totalSeen++;
@@ -534,7 +506,7 @@ const field = {
   },
 
   render(now) {
-    if (viewMode === "trace") { renderHeatmap(); return; }
+    if (viewMode === "trace") { renderTrace(); return; }
     ctx.clearRect(0, 0, W, H);
 
     // rails — hairline guides with quiet labels
@@ -569,13 +541,8 @@ const field = {
       t.w = ctx.measureText(t.word).width;
       t.calligramAlpha = lerp(t.calligramAlpha, t.calligram && t.s > 0.30 ? 1 : 0, 0.05);
     }
-    const vis = list.filter(t => t.s >= NOISE_FLOOR && t.depth <= maxDepth).sort((a, b) => a.s - b.s);
+    const vis = list.filter(t => t.s >= 0.015).sort((a, b) => a.s - b.s);
     this.relax(vis);
-    if (pCount) {
-      let cut = RAILS.length ? RAILS[0].layer : 0;
-      for (const r of RAILS) if (r.frac <= maxDepth) cut = r.layer;
-      pCount.textContent = "≤L" + cut;
-    }
 
     // pulses
     this.pulses = this.pulses.filter(p => p.a > 0.02);
@@ -645,9 +612,9 @@ const field = {
    For one word, draw its lens strength at every (layer, token): x = token
    position (shares the scrubber axis), y = layer, brightness = strength.
    Reveals a concept climbing the layers and rising/falling across the reply. */
-const HEAT_X0 = 60;
-function heatColW() { return (W - 24 - HEAT_X0) / Math.max(1, frames.length); }
-function renderHeatmap() {
+const TRACE_X0 = 60;
+function traceColW() { return (W - 24 - TRACE_X0) / Math.max(1, frames.length); }
+function renderTrace() {
   ctx.clearRect(0, 0, W, H);
   // rails + labels
   ctx.font = `10px ${MONO}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
@@ -663,20 +630,20 @@ function renderHeatmap() {
     ctx.fillStyle = "rgba(255,255,255,0.26)"; ctx.font = `10px Inter, sans-serif`;
     ctx.fillText("perception", 52, topY - 12); ctx.fillText("speech", 52, botY + 13);
   }
-  const N = frames.length, word = heatWord;
+  const N = frames.length, word = traceWord;
   ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   if (!N || !word) {
     ctx.fillStyle = "rgba(255,255,255,.3)"; ctx.font = `13px Inter, sans-serif`;
     ctx.fillText(N ? "open the “words” tab and click a word to trace it here"
-                   : "send a message, then switch to trace", HEAT_X0, (topY + botY) / 2);
+                   : "send a message, then switch to trace", TRACE_X0, (topY + botY) / 2);
     return;
   }
-  const colW = heatColW();
+  const colW = traceColW();
   for (let i = 0; i < N; i++) {
     const th = frames[i].thoughts.find(t => t.w === word);
     if (!th) continue;
     const acc = frames[i].phase === "reading" ? "232,161,60" : "108,184,224";
-    const x = HEAT_X0 + i * colW;
+    const x = TRACE_X0 + i * colW;
     for (const [l, p] of (th.prof || [])) {
       const v = strength(p);
       if (v < 0.02) continue;
@@ -687,16 +654,16 @@ function renderHeatmap() {
   }
   // playhead at the scrubbed token
   if (cursor >= 0) {
-    const px = HEAT_X0 + cursor * colW + colW / 2;
+    const px = TRACE_X0 + cursor * colW + colW / 2;
     ctx.strokeStyle = "rgba(255,255,255,.45)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(px, topY - 20); ctx.lineTo(px, botY + 20); ctx.stroke();
   }
   // word label
   ctx.fillStyle = "rgba(255,255,255,.82)"; ctx.font = `italic 500 20px ${SERIF}`;
-  ctx.fillText(word, HEAT_X0, topY - 26);
+  ctx.fillText(word, TRACE_X0, topY - 26);
   const lw = ctx.measureText(word).width;
   ctx.fillStyle = "rgba(255,255,255,.3)"; ctx.font = `10px ${MONO}`;
-  ctx.fillText(`strength across layers × ${N} tokens`, HEAT_X0 + lw + 14, topY - 27);
+  ctx.fillText(`strength across layers × ${N} tokens`, TRACE_X0 + lw + 14, topY - 27);
 }
 
 /* ---------------- pointer: hover + inspect ---------------- */
@@ -721,7 +688,7 @@ canvas.addEventListener("pointermove", e => {
 canvas.addEventListener("click", e => {
   if (viewMode === "trace") {
     if (!frames.length) return;
-    const i = Math.round((e.offsetX - HEAT_X0 - heatColW() / 2) / heatColW());
+    const i = Math.round((e.offsetX - TRACE_X0 - traceColW() / 2) / traceColW());
     pause(); following = false; seekTo(Math.max(0, Math.min(frames.length - 1, i))); setLiveState();
     return;
   }
@@ -731,9 +698,7 @@ canvas.addEventListener("click", e => {
 document.querySelectorAll("#viewtoggle .v").forEach(el => el.addEventListener("click", () => {
   viewMode = el.dataset.v;
   document.querySelectorAll("#viewtoggle .v").forEach(o => o.classList.toggle("on", o === el));
-  // the perception threshold only affects the cloud — hide it in trace mode
-  document.getElementById("percept").style.display = viewMode === "trace" ? "none" : "";
-  if (viewMode === "trace" && !heatWord && frames.length) heatWord = (computeWordStats()[0] || {}).word || null;
+  if (viewMode === "trace" && !traceWord && frames.length) traceWord = (computeWordStats()[0] || {}).word || null;
 }));
 document.querySelector("#inspect .x").onclick = () => {
   field.selected = null; inspectEl.style.display = "none";
@@ -766,10 +731,7 @@ const log = document.getElementById("log"), inp = document.getElementById("inp")
       send = document.getElementById("send"), phaseWrap = document.getElementById("phase"),
       phaseText = document.getElementById("phasetext"), conn = document.getElementById("conn"),
       ledger = document.getElementById("ledger"), tmRows = document.getElementById("tm-rows");
-const pThresh = document.getElementById("p-thresh"), pCount = document.getElementById("p-count");
 const words = document.getElementById("words"), wordsCount = document.getElementById("words-count");
-// slider right → smaller maxDepth → keep only the deepest (early/perception) layers
-pThresh.addEventListener("input", () => { maxDepth = 1 - +pThresh.value; renderTopMind(); });
 const history = [];
 
 /* ---------------- cumulative word statistics (panel A) ---------------- */
@@ -805,7 +767,7 @@ function computeWordStats() {
   }
   // rank by presence (how many tokens the word was active) — peak strength
   // saturates, so it's a poor sort key; count surfaces the real themes.
-  return [...m.values()].filter(e => e.peak >= NOISE_FLOOR && e.peakLayer / (nLayersG - 1) <= maxDepth)
+  return [...m.values()].filter(e => e.peak >= 0.14)
     .sort((a, b) => b.count - a.count || b.peak - a.peak);
 }
 function renderWordsTable() {
@@ -827,7 +789,7 @@ function renderWordsTable() {
     r.append(w, bar, ly, ct);
     r.title = `${e.word}: seen ${e.count}× (tok ${e.first + 1}–${e.last + 1}) · `
       + `peak strength ${e.peak.toFixed(2)} at L${e.peakLayer}, token ${e.peakFrame + 1}`;
-    r.addEventListener("click", () => { pause(); following = false; heatWord = e.word; seekTo(e.peakFrame); selectWord(e.word); });
+    r.addEventListener("click", () => { pause(); following = false; traceWord = e.word; seekTo(e.peakFrame); selectWord(e.word); });
     words.appendChild(r);
   }
   wordsCount.textContent = rows.length ? " " + rows.length : "";
@@ -874,13 +836,13 @@ function buildLedgerRow(f, idx) {
 }
 
 function renderTopMind() {
-  const top = [...field.thoughts.values()].filter(t => t.s >= NOISE_FLOOR && t.depth <= maxDepth)
-    .sort((a, b) => b.s - a.s).slice(0, 10);
+  const top = [...field.thoughts.values()].filter(t => t.s > 0.04)
+    .sort((a, b) => b.s - a.s).slice(0, 7);
   tmRows.innerHTML = "";
   for (const t of top) {
     const r = document.createElement("div"); r.className = "tm-row";
     const w = document.createElement("span"); w.className = "w"; w.textContent = t.word;
-    w.onclick = () => { heatWord = t.word; selectWord(t.word); };
+    w.onclick = () => { traceWord = t.word; selectWord(t.word); };
     const bar = document.createElement("span"); bar.className = "bar";
     const fill = document.createElement("i"); fill.style.width = (t.s * 100).toFixed(0) + "%";
     bar.appendChild(fill);
@@ -927,7 +889,7 @@ function resetViz() {
   field.thoughts.clear(); field.totalSeen = 0; field.pulses.length = 0;
   field.dominant = { word: null, run: 0 };
   field.selected = null; field.hovered = null; inspectEl.style.display = "none";
-  ledger.innerHTML = ""; tmRows.innerHTML = ""; words.innerHTML = ""; heatWord = null;
+  ledger.innerHTML = ""; tmRows.innerHTML = ""; words.innerHTML = ""; traceWord = null;
   stat("s-read", 0); stat("s-said", 0); stat("s-thoughts", 0); stat("s-tps", "–");
   tScrub.max = 0; tScrub.value = 0; tRead.textContent = "tok 0 / 0";
   setPlayIcon(); setLiveState();

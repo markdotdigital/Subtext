@@ -29,8 +29,8 @@ LENS_FILE = "qwen3.5-4b/jlens/Salesforce-wikitext/Qwen3.5-4B_jacobian_lens_n1000
 
 HERE = pathlib.Path(__file__).parent
 PORT = 8765
-TOPK_PER_LAYER = 12
-MAX_WORDS_PER_FRAME = 24  # client's "threshold of perception" slider reveals down into these
+TOPK_PER_LAYER = 8
+MAX_WORDS_PER_FRAME = 14
 # Fractions of network depth to read out at. Sparse early (reading), dense in
 # the middle (the workspace), one near the end (about to speak).
 LAYER_FRACS = [0.12, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.93]
