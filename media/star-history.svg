@@ -16,10 +16,10 @@
 <text x="70.0" y="497" text-anchor="middle" fill="#24292f" font-size="13">Jul 07</text>
 <text x="242.5" y="497" text-anchor="middle" fill="#24292f" font-size="13">Jul 19</text>
 <text x="415.0" y="497" text-anchor="middle" fill="#24292f" font-size="13">Jul 31</text>
-<text x="587.5" y="497" text-anchor="middle" fill="#24292f" font-size="13">Aug 12</text>
-<text x="760.0" y="497" text-anchor="middle" fill="#24292f" font-size="13">Aug 24</text>
+<text x="587.5" y="497" text-anchor="middle" fill="#24292f" font-size="13">Aug 13</text>
+<text x="760.0" y="497" text-anchor="middle" fill="#24292f" font-size="13">Aug 25</text>
 <path d="M70.0,432.7 L760.0,432.7" fill="none" stroke="#e8a13c" stroke-width="2.5" stroke-linejoin="round"/>
 <circle cx="70.0" cy="432.7" r="3" fill="#e8a13c"/>
 <text x="754.0" y="422.7" text-anchor="end" fill="#24292f" font-size="14" font-weight="600">1 stars</text>
-<text x="760" y="517" text-anchor="end" fill="#d0d7de" font-size="11">updated 2026-08-24 07:18 UTC</text>
+<text x="760" y="517" text-anchor="end" fill="#d0d7de" font-size="11">updated 2026-08-25 07:06 UTC</text>
 </svg>
